@@ -1,0 +1,1024 @@
+---
+title: "Proyecto AEDV"
+author: "Diego Marrero Ferrera"
+date: "2024 - Segundo Cuatrimestre"
+output:
+  html_document:
+    theme: paper
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r,echo=FALSE}
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE,
+  echo=FALSE
+)
+```
+
+<div style="margin-top: 30px;"></div>
+[**ENLACE PARA EL CUADRO DE MANDOS (Dashboard)**](http://10.22.143.222:3838/sample-apps/a2431/entrega_shiny.Rmd
+)
+<div style="margin-top: 30px;"></div>
+
+
+```{r, echo=FALSE, include=FALSE}
+library(tibble)
+library(pxR)
+library(patchwork)
+library(ggplot2)
+library(tidyverse)
+library(tsibble)
+library(RColorBrewer)
+library(fpp3)
+library(highcharter)
+library(openxlsx)
+library(plotly)
+library(urca)
+library(geojsonio)
+```
+
+
+# Introducción del Tema y Justificación del porqué
+
+La energía en Europa, un tema de **importancia crítica** tanto para el crecimiento económico como para la sostenibilidad ambiental, se encuentra actualmente en un momento crucial. Los **precios** de la electricidad han alcanzado **niveles históricamente altos**, afectados por una combinación de **factores geopolíticos, transiciones energéticas y fluctuaciones en la demanda post-pandemia**.
+
+Esta situación plantea desafíos significativos para los consumidores y las economías nacionales, pero también ofrece una oportunidad única para **revisar y mejorar** la estructura de nuestros **sistemas productivos de energía**.
+
+## Justificación del Estudio
+
+Ante este panorama mencionado, se hace imprescindible un análisis exhaustivo de nuestras fuentes de energía, los precios asociados y el consumo en Europa. La necesidad de entender las dinámicas de este mercado no solo es vital para responder a los desafíos inmediatos, sino también para planificar un futuro energético más estable y sostenible. Las preguntas clave que nos planteamos incluyen:
+
+1. **Análisis estructural**: ¿Cómo podemos analizar nuestro sistema productivo actual para identificar áreas de ineficiencia o desajuste entre oferta y demanda? Este análisis puede proporcionar _insights_ valiosos sobre cómo podemos **optimizar** el uso de recursos y **reducir los costos**.
+
+2. **Evaluación de fuentes de energía**: ¿Qué fuentes de energía son más eficaces, sostenibles y económicas en el contexto europeo? La diversificación energética es crucial, y es importante evaluar cada fuente de energía no solo en términos de costos inmediatos, sino también considerando su impacto ambiental y su sostenibilidad a largo plazo. Esto se debe a que, tengamos la ideología que tengamos, la tendencia europea actual va claramente dirigida, sin importar muchos otros factores, a reducir la huella de carbono lo máximo posible mediante la eliminación de fuentes fósiles. Además, también **dependemos** siempre de **otros continentes** para estas materias, lo que nos resta autonomía y soberanía, además de volatilizar y **depender de geopolítica ajena** a nosotros.
+
+3. **Toma de decisiones basada en datos**: ¿Qué decisiones estratégicas podemos tomar para mejorar la situación, basándonos en la información obtenida? Esto podría incluir inversiones en tecnologías emergentes, revisión de políticas energéticas, o fomento de otras fuentes de energía menos contaminantes.
+
+
+## Objetivos del Trabajo
+
+Con este estudio, pretendemos:
+
+- **Diagnosticar la situación actual**: Comprender las causas detrás de los altos precios de la energía y el patrón de consumo en diferentes países europeos.
+
+- **Comparar fuentes de energía**: Identificar las fuentes de energía más eficientes y sostenibles para diferentes regiones, considerando tanto aspectos económicos como ambientales.
+
+- **Proponer soluciones estructurales**: Desarrollar recomendaciones sobre cómo Europa puede adaptar su infraestructura y políticas energéticas para responder a las actuales presiones del mercado y objetivos de sostenibilidad.
+
+Este análisis no solo ayudará a mitigar los efectos de los precios elevados en el corto plazo, sino que también orientará a Europa hacia un sistema energético más resiliente y menos dependiente de factores externos volátiles. Con un enfoque integral y datos bien fundamentados, podemos avanzar hacia decisiones que aseguren un suministro energético equitativo, económico y ambientalmente sostenible para todos los europeos.
+
+
+<div style="margin-top: 30px;"></div>
+
+
+# Importación de Datasets
+
+### El DataSet *`"Producción Energética (Europa)"`*
+*Fuente:* ***Eurostat***
+
+En el dataset que vemos a continuación, tenemos datos sobre la **producción energética en Europa** diferenciando por tipo de fuente y en un periodo entre **1990 - 2022**.
+
+Sin embargo, hay que tener en cuenta pequeños vacíos de datos y la ambigüedad de la producción; pues la eficiencia de cada sistema energético y sus infraestructuras afectan en gran medida al consumo real de cada habitante.
+
+```{r}
+energy_fuels <- read.csv("energy_fuels_europe_type.csv") %>%
+  as_tibble()
+
+UN_CODES <- read.xlsx("UN_code.xlsx") %>%
+  as_tibble() %>%
+  select(3, 4)
+
+head(energy_fuels)
+```
+
+
+Podemos apreciar los diferentes tipos y fuentes de energía que valoramos, en los que se encuentran:
+
+```{r}
+levels(as.factor(energy_fuels$type))
+```
+
+
+### El dataset *`Consumos mundiales por fuente y país`*
+*Fuente:* ***Our World in Data (OWID)***
+
+Teniendo en cuenta el anterior dataset, ahora, mediante _OWID_, contamos con la información del **consumo energético** de los países (en los que aislaremos para el caso de **Europa**), pudiendo diferenciar de manera más fiel por fuente y en un periodo más amplio.
+
+```{r}
+energy_consumption <- read.csv("energy-consumption-by-source-and-country.csv") %>%
+  as_tibble() %>%
+  mutate(across(-c(Entity, Code, Year), ~replace_na(., 0)))
+```
+
+Este dataset nos ofrece una cantidad masiva de datos sobre el consumo de cada país desde 1971 en la mayoría de los casos, permitiendo la discriminación por fuente de energía.
+Este dataframe será el más importante junto a los precios y será usado en gran medida como contraste y _main source_ del proyecto.
+
+
+### El dataset *`Precios en Europa`*
+*Fuente:* ***Eurostat***
+
+```{r}
+precios_tb <- read.csv("precios_energia_csv_limpia.csv") %>%
+  as_tibble() %>% select(-1, -7)
+
+```
+
+Este dataset se centra en recoger los datos sobre los precios de la energía a nivel europeo para la **clase media**.
+Se consigue hacer el enfoque en este sector de la población mediante el ajuste del consumo por "household", o contrato de casa, donde tenemos a los que consumen cuenta con **fechas organizadas por semestre** y precios representados en `currency` / KWh, siendo currency:
+
+1. **EUR**: El valor expresado en Euros (€).
+2. **NAC**: Precio indicado en la moneda nacional del país del registro.
+3. **PPS**: Valor representado en el poder adquisitivo por habitante. Este valor es muy importante ya que nos permite representar de mejor manera el **esfuerzo** que le supone a cada habitante pagar por el precio de la energía.
+
+
+
+<div style="margin-top: 30px;"></div>
+
+# Consumo de energía
+
+<div style="margin-top: 30px;"></div>
+
+## Consumo por tipo de energía para el total en Europa, 2022
+
+```{r}
+energy_consumption_con_tot <- energy_consumption %>%
+  filter(Code %in% precios_tb$geo) %>%
+  rename("Other Renewables" = Other.renewables..including.geothermal.and.biomass....TWh) %>%
+  mutate(TOTAL = rowSums(select(., -Entity, -Code, -Year), na.rm = TRUE))
+
+energy_cons_long <- energy_consumption_con_tot %>%
+  pivot_longer(
+    cols = 4:13,
+    names_to = "Type",
+    values_to = "Consumption"
+  ) %>% 
+  mutate(Type = str_replace_all(Type, "\\..*\\.", " ")) %>% # Limpiamos Type names
+  mutate(Type = sub("TWh$", "", Type))  # Más limpieza
+
+energy_consumption_sectores <- energy_consumption_con_tot %>%
+  group_by(Code, Year) %>%
+  summarise(Petroleo = 
+              sum(Oil.consumption...TWh,
+                  Biofuels.consumption...TWh, Coal.consumption...TWh),
+            Gas = Gas.consumption...TWh,
+            Renovables = 
+              sum(`Other Renewables`, Solar.consumption...TWh, 
+                  Wind.consumption...TWh, Hydro.consumption...TWh),
+            Nuclear = Nuclear.consumption...TWh,
+            TOTAL = TOTAL) %>%
+  ungroup()
+  
+```
+
+
+_(Se hace un intento de implementar emojis, pero depende del entorno para funcionar)_
+```{r}
+# Crear una lista para mapear cada tipo de energía a un emoji
+types_energy <- unique(energy_cons_long$Type)[-10]
+emojis <- c("♻️", "🌱", "☀️", "💨", "💧", "⚛️", "🔥", "⛏️", "🛢️")
+emoji_labels <- setNames(emojis, types_energy)
+
+# Modificar el dataframe para incluir los emojis
+energy_cons_long <- energy_cons_long %>%
+  mutate(emoji = emoji_labels[Type])
+
+escala <- "lineal"
+
+energy_cons_long %>%
+  filter(Type != "TOTAL") %>%
+  group_by(Year, Type) %>%
+  summarise(Consumption = sum(Consumption)) %>%
+  hchart("line", hcaes(x = Year, y = Consumption, group = Type)) %>%
+  hc_title(text = "Evolución del Consumo Total en Europa por Fuente de Energía") %>%
+  hc_yAxis(type = ifelse(escala == "logarithmic", "logarithmic", "linear"),
+           title = list(text = paste0("Consumo (", escala,") (TWh)"))) %>%
+  hc_xAxis(title = list(text = "Año")) %>%
+  hc_tooltip(pointFormat = "<b>{point.series.name}</b>: {point.y} TWh <br/> {series.emoji}")
+
+```
+
+
+
+Para determinar las _"mejores"_ fuentes para producir energía, tenemos un informe en owid sobre las menos dañinas en el cómputo global:
+[Enlace al análisis en OWID sobre el coste humanitario de cada fuente energética.](https://ourworldindata.org/safest-sources-of-energy) y [la gráfica en concreto.](https://ourworldindata.org/grapher/death-rates-from-energy-production-per-twh)
+
+
+En este caso definimos **"Sector"** como la categoría de cada fuente vista previamente, en la que incluimos:
+
+**1. Derivados del petróleo y fósiles:** Incluyendo el carbón, los biofuels y el petróleo (con el gasoil como principal uso). Estas fuentes constituyen las que más emisiones de $CO_2$ producen y las **más peligrosas a nivel global**, según el enlace  a OWID, donde se destacan las elevadas tasas de mortalidad y el impacto ambiental adverso asociado con su extracción, procesamiento y combustión. Este grupo, además de ser uno de los **principales contribuyentes al cambio climático**, presenta riesgos significativos para la salud humana debido a la contaminación del aire y accidentes industriales.
+
+
+**2. Gas:** Aunque el gas natural es un combustible fósil, es considerado como una **opción de transición más limpia comparado con el carbón y el petróleo** debido a que produce menos emisiones de dióxido de carbono por unidad de energía generada. Sin embargo, **aún presenta desafíos** relacionados con las emisiones de **metano** y su **infraestructura**, que también pueden tener impactos ambientales y humanitarios significativos; sin contar con su transporte y extracción, que suponen el uso masivo de actividades altamente contaminantes.
+
+
+__3. Renovables:__ Este sector incluye la hidroelectricidad, energía solar, eólica y otras fuentes renovables. De acuerdo con los datos de OWID, las energías renovables presentan las **tasas más bajas de mortalidad por TWh producido, junto a la Nuclear**, lo que las convierte en las más seguras en términos de costos humanitarios directos. Además, su **impacto ambiental** es considerablemente **menor** en comparación con las fuentes fósiles, no solo en términos de emisiones de gases de efecto invernadero sino también en la reducción de la contaminación del aire y la gestión sostenible de los recursos naturales.
+
+
+__4. Nuclear:__ A pesar de las preocupaciones públicas sobre la seguridad y los desechos radiactivos, la energía nuclear es **una de las fuentes con menor tasa de mortalidad por TWh generada**, según el análisis de OWID. Su capacidad para generar **grandes cantidades de energía** con una **huella** de **carbono mínima** la hace una opción valiosa para la descarbonización, aunque requiere gestión cuidadosa y regulaciones estrictas para asegurar la seguridad a largo plazo. Esto es un factor que, desde los famosos accidentes nucleares, se ha puesto como prioridad para todas las centrales nucleares construidas mediante un convenio mundial que asegura y garantiza la seguridad de toda central.
+
+
+
+```{r}
+sectores_long <- energy_consumption_sectores %>%
+  pivot_longer(
+    cols = 3:7,
+    names_to = "Type",
+    values_to = "Consumption"
+  ) %>% 
+  mutate(Type = str_replace_all(Type, "\\..*\\.", " ")) %>% # Limpiamos Type names
+  mutate(Type = sub("TWh$", "", Type))
+
+sectores_long %>%
+  filter(Type != "TOTAL") %>%
+  group_by(Year, Type) %>%
+  summarise(Consumption = sum(Consumption)) %>%
+  hchart("line", hcaes(Year, Consumption, group=Type)) %>%
+  hc_title(text = "Evolución del Consumo Total en Europa por Sector de Energía") %>%
+  hc_yAxis(type = ifelse(escala=="logarithmic", "logarithmic", "linear"),
+           title = list(text = paste0(
+             "Consumo (", escala,") (TWh)"))) # Set y-axis to logarithmic scale
+```
+
+Tras ver las gráficas, aquí hay algunas conclusiones y sugerencias para mejoras:
+
+#### Conclusiones del consumo:
+
+1. **Incremento en Renovables**: Ha habido un crecimiento significativo en el uso de energías renovables. Este es un cambio positivo dado que las fuentes renovables tienen un menor impacto ambiental y menor costo humanitario asociado con su uso. Esto ha sido debido en su mayor parte gracias a las **políticas medioambientales** acogidas justamente en Europa como referente, y gracias al **desarrollo tecnológico**, el cual ha permitido aumentar la eficiencia y crear accesibilidad para el uso de estos generadores de energía.
+
+2. **Disminución de Petróleo**: El sector del petróleo muestra una disminución a lo largo del tiempo, lo cual puede indicar una transición hacia fuentes de energía más limpias, una respuesta a las **políticas de descarbonización**, o reflejar mejoras en la eficiencia energética, que puede ser otra opción a barajar.
+
+3. **Gas como Principal Fuente Fósil**: El consumo de gas se ha mantenido relativamente constante y alto, siendo el componente individual con mayor crecimiento en estos últimos años; lo que sugiere que puede estar funcionando como una **"energía de transición"** alejándose de fuentes más contaminantes como el petróleo y el carbón. Sin embargo, veremos que hay mejores soluciones a considerar.
+
+4. **_Plateau_ en Nuclear**: La energía nuclear parece haber alcanzado un plateau o incluso una disminución ligera, lo que puede ser resultado de preocupaciones públicas sobre seguridad y residuos nucleares, o la falta de inversión en nuevas plantas nucleares. Estos bajones se pueden haber debido a accidentes nucleares (*Fukushima, Japón (2011)*, *Chernobyl, URSS (1986)*) y, como mencionamos, el miedo social inducido tras esto. 
+Otro factor a considerar son los **muy elevados plazos necesarios para comenzar el funcionamiento de una nueva central nuclear**: estas centrales toman, entre burocracia y construcción, **más de 10 años**, como norma general. Si tenemos en cuenta el panorama político de la mayoría de Europa, vemos que, al menos todos los componentes de la Unión Europea, son **social-democracias** que cambian de partido mediante elecciones cada 4 - 5 años. Esto causa que la construcción de una central nuclear no haga que se produzcan beneficios inmediatos en cuanto a producción pero sí un gasto adicional, resultando ***contraproducente*** a nivel político.
+
+
+#### Sugerencias para Mejoras:
+
+1. **Promover Renovables y Nuclear**: Ampliar incentivos para la inversión en energías renovables, con el objetivo de acelerar aún más su adopción y desarrollo tecnológico.
+
+2. **Eficiencia y Transición Energética**: Fomentar la eficiencia energética y el cambio hacia fuentes de energía más limpias en los sectores de transporte e industria, que tradicionalmente dependen del petróleo y sus derivados. Ya esto, como hemos visto, se ha estado haciendo con las fuentes fósiles, pero la vía de escape no debería ser el Gas Natural, ya que no resulta ser un sustituto mucho mejor.
+
+3. **Integración de Redes y Almacenamiento**: Mejorar la infraestructura de redes eléctricas para integrar eficientemente las fuentes renovables, que a menudo son intermitentes, y desarrollar soluciones de almacenamiento de energía a gran escala.
+
+4. **Investigación y Desarrollo**: Puede resultar muy útil incrementar la financiación para la investigación y desarrollo en tecnologías de energía limpia y segura, incluyendo la captura de carbono para sectores donde la electrificación es desafiante. Ya vimos que las **energías renovables crecieron** en gran medida debido al **avance en eficiencia y tecnología**. Además, con esta investigación, se podría desarrollar la **fusión nuclear** como nueva fuente energética, ya que es una fuente en la que toda la comunidad científica asegura que es la **mejor, más limpia y más eficiente**.
+
+_Artículos que corroboran el avance de la fusión nuclear_:
+* [Noticia de la BBC](https://www.bbc.com/news/science-environment-68233330)
+* [Artículo de REUTERS](https://www.reuters.com/business/energy/us-scientists-repeat-fusion-power-breakthrough-ft-2023-08-06/)
+* [Artículo de "Energy.Gov"](https://www.energy.gov/articles/doe-national-laboratory-makes-history-achieving-fusion-ignition)
+
+5. **Diversificación Energética**: Buscar una diversificación en la mezcla energética para **no depender** excesivamente de **una sola fuente**, lo que puede incrementar la resiliencia del sistema energético ante fluctuaciones económicas o desastres naturales, **quitando volatilidad** al sistema energético de los países.
+
+<div style="margin-top: 30px;"></div>
+
+
+## Consumo total a nivel mundial _(OurWorldInData)_:
+_Este dataset realmente es un filtrado del que importamos anteriormente, donde solo aparecen los datos a nivel mundial._
+
+```{r}
+global_consumption <- read.csv("global-energy-consumption.csv") %>%
+  as_tibble() 
+
+energy_long <- global_consumption %>% 
+  rename("Traditional biomass" = Traditional.biomass..TWh..substituted.energy.) %>%
+  rename("Other Renewables" = Other.renewables..TWh..substituted.energy.) %>%
+  pivot_longer(
+    cols = starts_with("Other renewables"):starts_with("Traditional biomass"),
+    names_to = "Type",
+    values_to = "Consumption"
+  ) %>% 
+  mutate(Type = str_replace_all(Type, "\\..*\\.", " ")) # Clean the Type names
+
+energy_long %>%
+  mutate(Type = reorder(Type, Consumption, FUN = sum)) %>%
+  arrange(Year, Consumption) %>% # Arrange by Year and Consumption in ascending order
+  hchart("area", hcaes(x = Year, y = Consumption, group = Type)) %>%
+  hc_plotOptions(area = list(stacking = "normal")) %>%
+  hc_title(text = "Consumo Global de Energía por Fuente") %>%
+  hc_xAxis(title = list(text = "Año")) %>%
+  hc_yAxis(title = list(text = "Consumo Energético (TWh)")) %>%
+  hc_add_theme(hc_theme_smpl()) # Esto es opcional para añadir un tema de estilo
+```
+
+Como se puede apreciar, este gráfico muestra el consumo global de energía por fuente desde 1800 hasta el presente. La tendencia general muestra un crecimiento sostenido en el consumo total de energía, con la introducción de nuevas fuentes de energía a lo largo del tiempo, como la nuclear, el gas, y las energías renovables.
+No obstante, hay notables declinaciones en ciertos períodos, relacionados con eventos económicos, políticos o de salud pública que afectaron el consumo mundial de energía. Estos periodos podemos relacionarlos con crisis comunes a nivel mundial, lo que nos da a entender que el __consumo energético__ es un **indicador del avance y estado económico** (en este caso bastante general por ser a nivel mundial).
+
+### Evaluación de los bajones específicos:
+
+1. **Crisis del petróleo de 1973-1975 y 1979**:
+   - En 1973 y nuevamente en 1979, el mundo experimentó importantes crisis del petróleo, desencadenadas por decisiones políticas en los países de la OPEP (Organización de Países Exportadores de Petróleo) que limitaron la oferta de petróleo como respuesta a apoyos políticos a Israel. Esto llevó a un aumento significativo en los precios del petróleo y racionamiento en varios países, lo que a su vez redujo el consumo de energía basada en petróleo y estimuló un interés creciente en fuentes alternativas de energía y políticas de ahorro energético. En ese entonces, la diferenciación energética era aún más difícil que ahora, pues las infraestructuras no estaban preparadas para suplir una crisis de tales dimensiones. 
+   
+   - El impacto en 1975 puede estar relacionado con la recesión económica que siguió a la primera crisis del petróleo, donde la actividad económica se redujo significativamente a nivel mundial. Esto es altamente recordado también en España, la cual sufrió en gran medida esta crisis justamente tras la muerte de Francisco Franco y el comienzo de la Transición.
+
+2. **Recesiones económicas (1982, 2007-2009)**:
+   - La recesión de principios de los 80 fue en parte una consecuencia de las políticas de alta tasa de interés en los Estados Unidos para combatir la inflación, que también afectaron a la economía global. Esto llevó a una disminución en la producción industrial y, por lo tanto, en el consumo de energía.
+   
+   - La famosa crisis financiera de 2007-2009, iniciada por el colapso del mercado inmobiliario en EE.UU., llevó a una crisis económica mundial que redujo la demanda de energía. Las industrias consumieron menos energía debido a la disminución en la manufactura y la construcción, y el consumo privado también se redujo.
+
+3. **Pandemia de COVID-19 (2020)**:
+   - La pandemia tuvo un impacto dramático en el consumo global de energía. Los confinamientos y las restricciones a la movilidad redujeron considerablemente el consumo de energías vinculadas al transporte y la industria. Aunque hubo una recuperación parcial hacia finales del año, la disminución inicial fue tan significativa que el total anual mostró una caída notable.
+
+### Valoración de la evolución del consumo a nivel mundial
+
+El gráfico refleja no solo el crecimiento en la demanda global de energía impulsado por el desarrollo económico y el crecimiento poblacional, sino también cómo esta demanda ha sido cada vez más satisfecha con una diversidad de fuentes de energía. Inicialmente dominada por la biomasa tradicional y el carbón, la mezcla energética ha evolucionado para incluir petróleo, gas, nuclear y una creciente proporción de renovables.
+
+Este diverso panorama energético refleja una serie de factores:
+- **Desarrollos tecnológicos**: Mejoras en la tecnología de energía renovable y nuclear han hecho estas fuentes más viables.
+
+- **Preocupaciones medioambientales**: La conciencia sobre el cambio climático ha impulsado políticas que favorecen las energías renovables y más limpias sobre los combustibles fósiles.
+
+- **Seguridad energética**: Diversificar las fuentes de energía reduce la dependencia de importaciones y mejora la seguridad energética de los países, restándoles volatilidad.
+
+La adaptación a estas nuevas tecnologías y fuentes de energía continuará siendo un desafío clave para satisfacer la creciente demanda mundial de energía de manera sostenible, especialmente en el contexto de los objetivos climáticos globales y la transición hacia una economía baja en carbono. Sin embargo, vamos a analizar el siguiente gráfico que contrasta estas conclusiones.
+
+
+
+
+
+```{r}
+
+# Calculamos el total por año
+total_consumption_by_year <- energy_long %>% 
+  group_by(Year) %>% 
+  summarise(TotalConsumption = sum(Consumption))
+
+# Hacemos un left join de nuestros datos con la suma total para tener los porcentajes
+energy_long <- energy_long %>% 
+  left_join(total_consumption_by_year, by = "Year") %>% 
+  mutate(Percentage = (Consumption / TotalConsumption) * 100)
+```
+
+```{r}
+
+# Reordenamos para tener las fuentes más usadas abajo y las menos usadas arriba
+energy_long <- energy_long %>%
+  mutate(Type = reorder(Type, Consumption, FUN = sum))
+```
+
+```{r}
+# Creamos el hchart:
+energy_long %>%
+hchart("area", hcaes(x = Year, y = Percentage, group = Type)) %>%
+  hc_plotOptions(area = list(stacking = "percent")) %>% # Stack by percent
+  hc_title(text = "Consumo Global de Energía por Fuente (Porcentajes)") %>%
+  hc_xAxis(title = list(text = "Año")) %>%
+  hc_yAxis(title = list(text = "Porcentaje del Consumo Total"),
+           labels = list(format = '{value} %')) %>%
+  hc_add_theme(hc_theme_smpl()) # Adds a simple theme
+```
+
+
+Esta perspectiva permite un análisis más matizado sobre cómo ha evolucionado el consumo energético y subraya la implementación de tecnologías energéticas a lo largo del tiempo. Concretando
+
+### Conclusiones
+
+1. **Dominancia inicial de la biomasa tradicional**: Hasta finales del siglo XIX, la biomasa tradicional (como la **leña**) dominaba el consumo energético. Este tipo de energía, aunque renovable, tiene limitaciones significativas en términos de eficiencia y sostenibilidad, especialmente debido a su impacto en la deforestación y en la calidad del aire, sin contar con su baja producción energética por el precio del material.
+
+2. **Transición al carbón y luego al petróleo y gas**: Con la revolución industrial, el carbón se convirtió en la principal fuente de energía, seguido por el petróleo y el gas en el siglo XX. Estas fuentes han permitido un enorme desarrollo económico global. Sin embargo, su uso extensivo también ha llevado a problemas significativos de emisiones de $CO2$ y otros contaminantes como los $NO_x$ y $CO$ entre otros.
+
+3. **Crecimiento de la energía nuclear**: La energía nuclear, que aparece en la gráfica a mediados del siglo XX, ha proporcionado una fuente de energía de **alta densidad** y **baja emisión de carbono**. A pesar de los debates sobre seguridad y gestión de residuos radiactivos, la energía nuclear es una de las **fuentes más eficientes y confiables de energía baja en carbono**, crucial para la base de carga en muchos sistemas energéticos nacionales.
+
+4. **Avance de las renovables**: Las tecnologías renovables, como la hidroeléctrica, solar y eólica, han visto un crecimiento significativo en las últimas décadas, impulsadas por mejoras tecnológicas y una reducción en los costos. Aunque estas fuentes son esenciales para una transición energética sostenible, su **intermitencia** y la necesidad de almacenamiento de energía plantean desafíos que deben ser abordados para asegurar la estabilidad de las redes eléctricas.
+
+5. **Evaluación objetiva de las renovables**: Si bien las energías renovables son prometedoras para reducir la dependencia de los combustibles fósiles y sus emisiones asociadas, actualmente requieren complementos significativos para asegurar un suministro constante de energía debido a su naturaleza variable. Esto hace que la energía nuclear sea una opción atractiva como un pilar estable dentro de una matriz energética diversificada, proporcionando energía continua sin las emisiones de los combustibles fósiles.
+
+  En resumen, el avance hacia un sistema energético más diversificado y menos dependiente de los combustibles fósiles es evidente y lo tenemos como un factor positivo. Sin embargo, la implementación plena de energías renovables presenta desafíos técnicos que aún necesitan resolverse para garantizar la confiabilidad del suministro.
+  En este contexto, la energía nuclear ofrece un medio eficaz y probado para complementar las fuentes renovables, asegurando un suministro de energía constante y sostenible mientras se minimiza el impacto ambiental. A pesar de los retos asociados con las renovables, es imprescindible una inversión continua en la mejora de estas tecnologías, así como en soluciones de almacenamiento y gestión de la red que permitan maximizar su potencial.
+
+
+
+
+## ARIMA con la estimación y periodicidad del consumo en los futuros años
+
+
+Para realizar una predicción sobre el consumo a futuro, realizaremos una predicción **ARIMA** basándonos en la evolución de este mismo valor.
+
+Este modelo ARIMA mencionado significa _"Autoregressive Integrated Moving Average"_ y se trata de una técnica de modelado estadístico que se utiliza para prever series temporales; es decir, datos que varían a lo largo del tiempo. Este modelo combina tres componentes principales: términos autorregresivos (AR), diferenciación (I) para hacer la serie temporal estacionaria, y términos de media móvil (MA). La integración de estos componentes permite que ARIMA maneje datos que muestran tendencias y patrones estacionales. Por lo tanto, podremos ver **estimaciones para valores a futuro** de nuestro interés.
+
+
+#### Importancia de la Predicción con ARIMA
+
+En el contexto del consumo energético, realizar predicciones utilizando modelos como ARIMA es crucial por varias razones:
+
+1. **Planificación y Gestión de Recursos**: Las predicciones precisas del consumo energético son fundamentales para la planificación eficiente de la generación de energía y la gestión de recursos. Los operadores de redes y las empresas de energía pueden utilizar estas predicciones para asegurarse de que pueden satisfacer la demanda futura sin excesos costosos.
+
+2. **Política Energética y Estrategia**: Comprender las tendencias futuras en el consumo de energía es vital para formular políticas energéticas sostenibles. Estas predicciones pueden influir en decisiones importantes, como inversiones en infraestructuras de energías renovables o modificaciones en las regulaciones y subsidios energéticos.
+
+3. **Impacto Ambiental**: Con las crecientes preocupaciones sobre el cambio climático y el impacto ambiental de la generación de energía, prever el consumo futuro puede ayudar a mitigar los efectos ambientales. Esto se logra al optimizar la combinación de fuentes de energía y reducir la dependencia de combustibles fósiles.
+
+4. **Innovación y Desarrollo de Mercado**: Las previsiones también son importantes para los desarrolladores de nuevas tecnologías y para los mercados de energía. Comprender hacia dónde se dirige la demanda puede guiar la innovación y el desarrollo de productos que satisfagan las necesidades futuras de manera más eficiente y sostenible.
+
+#### Aplicación del Modelo ARIMA en el Consumo Energético
+
+
+Al utilizar ARIMA y otras técnicas de modelado predictivo, los **stakeholders pueden tomar decisiones más informadas y estratégicas**, asegurando que el crecimiento y el desarrollo se lleven a cabo de manera sostenible y responsable frente a los desafíos futuros. Además, podremos **predecir una tendencia** y anticiparnos a ella para que el resultado sea mejor.
+
+
+```{r}
+total_consumption_tsib <- tsibble(total_consumption_by_year,
+        index = Year) %>% fill_gaps()
+consumo.arima <- total_consumption_tsib %>%
+  model(ARIMA(TotalConsumption))
+```
+
+```{r}
+prediccion <- consumo.arima %>%
+  forecast(h = "28 years")
+prediccion %>%
+  autoplot(total_consumption_tsib) +
+  labs(title = "Predicción del consumo hasta 2050") +
+  xlim(c(1920, 2050))+
+  ylab("Consumo Total (TWh)")
+```
+
+A continuación, replicamos la predicción pero esta vez cogemos los datos a partir del año **1965**, dado que es a partir de esta fecha que los datos se toman anualmente y además tenemos acogido un modelo energético de incremento más cercano al actual. De esta manera, la predicción acaba siendo más fiel, precisa y replicable.
+
+```{r}
+total_consumption_tsib_recortado <- total_consumption_tsib %>%
+  filter(Year > 1965)
+consumo.arima.recortado <- total_consumption_tsib_recortado %>%
+  model(ARIMA(TotalConsumption))
+
+prediccion <- consumo.arima.recortado %>%
+  forecast(h = "28 years")
+prediccion %>%
+  autoplot(total_consumption_tsib_recortado) +
+  labs(title = "Predicción del Consumo hasta 2050 (Ajustado)") +
+  ylab("Consumo Total (TWh)")
+```
+
+
+#### Conclusiones
+
+De este modo, la predicción es más fiel porque la predicción no se ve alterada por los datos antiguos donde el **modelo industrial** no estaba establecido como lo está ahora, siendo unos años con la mayor parte de la población mundial con un estilo de vida rural, muy distinto al de ahora. Eligiendo los datos tras la recuperación de la II Guerra Mundial, conseguimos escoger para estimar la predicción unos datos más realistas y fieles sobre la tendencia actual en cuanto al consumo energético.
+
+Con esto explicado, vemos en el segundo modelo (ajustado) una predicción que nos muestra un consumo a nivel mundial de casi 250.000 TWh, lo que supone un **incremento** de casi un **40%** sobre el consumo actual para el año 2050.
+
+Teniendo en cuenta la predicción para el aumento de la demanda, junto a la problemática actual de la producción energética, es necesario adaptar modelos que se centren en poder satisfacer dicha demanda, teniendo en cuenta la evolución de los últimos años centrada al freno del cambio climático. Es por esto que intentaremos dar un enfoque mayor en **fuentes NO fósiles**, como puede ser la nuclear y la renovable (donde se incluye la solar, hidráulica, eólica, etc.). Estas fuentes no solo son menos dañinas para el medio ambiente y más sostenibles a largo plazo, sino que también ofrecen una menor tasa de mortalidad asociada con su producción y uso, como indica el análisis en OWID.
+
+La **transición energética** hacia estas fuentes menos dañinas ha sido una prioridad en la agenda global, no solo para mitigar el impacto del cambio climático, sino también para mejorar la seguridad energética y la salud pública. La **inversión en investigación y desarrollo**, junto con políticas que promuevan la adopción de tecnologías limpias y eficientes, serán cruciales para alcanzar los objetivos de consumo propuestos para 2050.
+
+Además, será **esencial considerar la eficiencia energética** en todos los sectores de consumo para controlar la demanda. Esto no solo implica mejorar la eficiencia de los dispositivos y maquinaria que utilizamos diariamente, sino también rediseñar nuestros sistemas urbanos y de transporte para reducir el consumo total de energía.
+
+En resumen, esta predicción ARIMA ajustada nos ofrece una visión clara de la tendencia creciente en la demanda de energía y la urgente necesidad de ir apuntando nuestros esfuerzos hacia un **futuro energético más eficiente, limpio, accesible y de bajo coste**.
+
+
+<div style="margin-top: 30px;"></div>
+
+
+## Mapa de Calor del Consumo por País y Fuente
+
+
+
+El análisis del consumo de energía per cápita por fuente y país en Europa es fundamental para entender las dinámicas de sostenibilidad y dependencia energética en el continente. Un mapa de calor, como el que se propone para el año 2021, último con datos de población disponibles, ofrece una visualización clara e inmediata de cómo diferentes naciones aprovechan diversas fuentes energéticas. Este tipo de análisis ayuda a identificar patrones de consumo, eficiencia energética y potenciales áreas de mejora en políticas energéticas y tecnológicas.
+
+Al realizar el análisis **per cápita**, usando los datos de población de _OWID_, podemos contrastar de manera fiel y justa los valores del consumo por habitante, ya que en otro caso los países grandes eclipsarían los países con pocos habitantes y crearían un sesgo que quitaría toda aceptabilidad a nuestro análisis.
+
+
+```{r, fig.asp=2}
+owid.population <- read.csv("population.csv") %>%
+  as_tibble()
+
+owid.population <- owid.population %>%
+  rename(Population = Population..historical.estimates.)
+
+consum_y_popul <- left_join(energy_cons_long, owid.population,
+                            by = c("Code", "Year", "Entity"))
+
+consum_per_capit <- consum_y_popul %>%
+  filter(Year == 2021) %>%
+  group_by(Entity, Type) %>%
+  summarise(Cons_per_cap = Consumption / Population)
+
+p <- consum_per_capit %>%
+  filter(Type != "TOTAL") %>%
+  ggplot(aes(Type,Entity,fill=Cons_per_cap)) + 
+    geom_tile(color = "lightblue",
+            lwd = 0.5,
+            linetype = 1) + 
+    scale_fill_gradientn(colors = brewer.pal(9, 'YlOrRd'))+
+    theme(axis.text.x = element_text(angle = 45,hjust=1)) +
+  ggtitle("Consumo per Cápita por fuente en 2021")
+
+ggplotly(p)
+```
+
+
+A continuación realizamos lo mismo pero dividiendo por sector energético:
+
+```{r, fig.asp=2}
+energy_consumption_sectores_long <- energy_consumption_sectores %>%
+  pivot_longer(cols = 3:7, names_to = "Type", values_to = "Consumption")
+
+consum_y_popul <- left_join(energy_consumption_sectores_long,
+                            owid.population,
+                            by = c("Code", "Year"))
+
+consum_per_capit <- consum_y_popul %>%
+  filter(Year == 2021) %>%
+  group_by(Entity, Type) %>%
+  summarise(Cons_per_cap = Consumption / Population)
+
+p <- consum_per_capit %>%
+  filter(Type != "TOTAL") %>%
+  ggplot(aes(Type,Entity,fill=Cons_per_cap)) + 
+    geom_tile(color = "lightblue",
+            lwd = 0.5,
+            linetype = 1) + 
+    scale_fill_gradientn(colors = brewer.pal(9, 'YlOrRd'))+
+    theme(axis.text.x = element_text(angle = 45,hjust=1)) +
+  ggtitle("Consumo per Cápita por Sector en 2021")
+
+ggplotly(p)
+```
+
+
+
+
+### Análisis de Resultados del Mapa de Calor
+
+1. **Consumo Hidráulico en Escandinavia**:
+   - Noruega e Islandia muestran un uso desmesuradamente alto de energía hidráulica. Estos países tienen geografías que favorecen la generación de energía hidroeléctrica, con abundantes recursos hídricos y topografías montañosas. Este alto consumo no solo refleja una **ventaja geográfica** sino también un enfoque político y económico hacia fuentes de energía renovables y sostenibles. La capacidad de generar gran parte de su energía a través de fuentes hidráulicas permite a estos países reducir su dependencia de combustibles fósiles y minimizar su huella de carbono.
+
+2. **Alto Consumo de Petróleo**:
+   - La columna correspondiente al petróleo muestra altos niveles de consumo en varios países. Esto podría reflejar una **dependencia continua en los combustibles fósiles**, especialmente para el transporte y la industria. A pesar de los esfuerzos por diversificar las fuentes de energía, el petróleo sigue siendo crucial en las economías modernas, aunque conlleva desafíos ambientales y de sostenibilidad.
+
+3. **Consumo Notable de Gas Natural**:
+   - El gas natural también presenta un alto consumo, visible en toda su columna en el mapa de calor. Este recurso es a menudo visto como un "combustible de transición", ayudando a los países a moverse desde fuentes más contaminantes como el carbón y el petróleo hacia alternativas más limpias. Sin embargo, su uso también plantea desafíos para la sostenibilidad a largo plazo y la reducción de emisiones de gases de efecto invernadero.
+   
+4. **Análisis sectorial**:
+  - Como era de esperar, al dividir el mapa de calor por sectores energéticos, los que **predominan** vuelven a ser los **sectores con mayor huella de carbono** como son el de `"Petróleo"` y el de `"Gas Natural"`. De nuevo destacan en gran medida los países nórdicos en las energías renovables por las razones explicadas previamente, pero ahora es más fácil ver la presencia de las fuentes fósiles en nuestras infraestructuras energéticas. Así que de nuevo, excepto los casos excepcionales que nombramos, las fuentes **Nuclear** y **Renovables** no son significativas en comparación a las otras dos.
+  
+
+### Implicaciones
+
+Este análisis subraya la importancia de **adaptar las estrategias energéticas a las condiciones y recursos locales de cada país**, al mismo tiempo que se promueve una mayor adopción de tecnologías renovables. Aunque países como Noruega e Islandia lideran con el ejemplo en el uso de energía hidroeléctrica, la prevalencia del petróleo y el gas natural en toda Europa sugiere que aún hay un largo camino por recorrer en la transición energética del continente.
+
+Las políticas energéticas futuras deberían enfocarse no solo en aumentar la eficiencia energética y la sostenibilidad, sino también en desarrollar infraestructuras que permitan una mayor integración de fuentes renovables, como la eólica y la solar, que muestran una adopción menor en comparación con el hidroeléctrico, el petróleo y el gas. Con esto, deberíamos seguir el ejemplo de Escandinavia aprovechando en países sureños como **España, Italia y Grecia** nuestras **ventajas geográficas** como pueden ser las **largas horas de sol** o las **minas propias de uranio** en el caso de España, favoreciendo la energía nuclear. Estos esfuerzos son cruciales para alcanzar los objetivos globales en cuanto a cambio climático y para asegurar un suministro energético sostenible y resiliente a futuro, sin depender tanto del exterior.
+
+
+
+
+
+# Precio
+
+
+
+
+## Evolución de los Precios para España
+
+
+En los últimos años, es bien sabido que España ha experimentado un **aumento significativo en los precios de la energía**, un fenómeno que ha afectado profundamente el poder adquisitivo de la clase media junto a las otras. Este incremento ha sido influenciado por varios factores globales y locales, incluyendo fluctuaciones del mercado energético, políticas regulatorias y cambios en los costos de producción. 
+
+Para analizar esta evolución en los últimos veinte años, representamos los siguientes gráficos de **líneas** y de **radar** respectivamente.
+
+
+```{r}
+dibujar_precios <- precios_tb %>%
+  filter(nrg_cons == "KWH2500-4999" & geo == "ESP" & TIME_PERIOD != "2023-S1"
+         & currency != "NAC") %>%
+  rename(Precio = OBS_VALUE) %>%
+  select(-nrg_cons, -geo)
+
+dibujar_precios %>%
+  hchart("line", hcaes(x = TIME_PERIOD, y=Precio, group=currency)) %>%
+  hc_yAxis(title = list(text = "Precio en \"Units\" / KWh")) %>%
+  hc_xAxis(title = list(text = "Año - Semestre")) %>%
+  hc_title(text = "Evolución de los Precios en España por Semestre y medida")
+
+```
+
+```{r}
+# Crear un tibble por cada moneda
+data_eur <- dibujar_precios %>% filter(currency == "EUR")
+data_pps <- dibujar_precios %>% filter(currency == "PPS")
+
+# Crear el gráfico de radar
+plot_ly(type = 'scatterpolar', fill = 'toself') %>%
+  add_trace(
+    r = data_eur$Precio,
+    theta = data_eur$TIME_PERIOD,
+    name = 'EUR',
+    mode = 'lines+markers'
+  ) %>%
+  add_trace(
+    r = data_pps$Precio,
+    theta = data_pps$TIME_PERIOD,
+    name = 'PPS',
+    mode = 'lines+markers'
+  ) %>%
+  layout(
+    polar = list(
+      radialaxis = list(visible = T, range = c(min(dibujar_precios$Precio), max(dibujar_precios$Precio)))
+    )
+  )
+
+```
+
+
+### Análisis de los Resultados
+
+Las gráficas proporcionadas muestran una tendencia creciente en los precios de la energía en España, tanto en la gráfica de líneas como en el gráfico de radar, lo cual refleja la creciente carga financiera sobre los consumidores. Este aumento continuo subraya la **urgencia de explorar y explotar las ventajas energéticas intrínsecas de España**:
+
+1. **Energía Solar**: España, con sus largas horas de sol, posee un potencial significativo para la energía solar. Incrementar la inversión en tecnologías solares no solo podría ayudar a mitigar los crecientes costos de energía, sino también avanzar hacia un futuro más sostenible y menos dependiente de los combustibles fósiles.
+
+2. **Energía Nuclear y Reservas de Uranio**: España también tiene **reservas significativas de uranio**, lo que podría ser vital para su estrategia energética. Según la _World Nuclear Association_, en áreas como la de Aguila en España, existen depósitos importantes como Sageras, Majuelos y Palacios, con reservas comprobadas y medidas en conjunto de hasta **8000 toneladas de uranio** ( _tU_ ). Estas reservas podrían fundamentar una expansión de la capacidad nuclear del país, proporcionando una fuente de energía estable y de baja emisión carbono. Actualmente, España importa la mayoría del uranio que necesita para sus reactores nucleares, lo cual subraya la importancia de desarrollar su capacidad de producción nacional para reducir dependencias externas y estabilizar los precios de la energía.
+
+[Enlace al artículo de _World Nuclear Association_](https://www.world-nuclear.org/information-library/country-profiles/countries-o-s/spain)
+
+
+### Conclusión
+
+**La necesidad de España de diversificar y estabilizar su matriz energética es más crítica que nunca**.
+Explorar plenamente las capacidades de la **energía solar** y avanzar en la utilización de sus **reservas de uranio** para la **energía nuclear** podría proporcionar rutas hacia una seguridad energética mejorada y una economía más resiliente frente a las fluctuaciones del mercado global. Esto no solo ayudará a controlar los precios de la energía a largo plazo, sino que también fortalecerá la sostenibilidad ambiental del país.
+
+
+
+<div style="margin-top: 30px;"></div>
+
+# ANÁLISIS DE CORRELACIÓN 
+
+<div style="margin-top: 30px;"></div>
+
+
+En el contexto del consumo y precio de energía en Europa, realizar un análisis de **correlación** por **fuente de energía** y por **país** ofrece varias ventajas clave para entender las dinámicas del mercado energético. Este enfoque nos puede permitir, además de a los analistas, a los **formuladores de políticas** y **empresas del sector** identificar tendencias, **impulsar decisiones informadas** y optimizar estrategias a nivel nacional y regional.
+
+<div style="margin-top: 30px;"></div>
+
+
+### Motivos del Análisis de Correlación
+
+<div style="margin-top: 30px;"></div>
+
+1. **Variabilidad de Precios y Consumo**: Los precios de la energía pueden fluctuar considerablemente debido a factores como la política internacional, cambios en la oferta y la demanda, y desarrollos tecnológicos. Estas fluctuaciones pueden tener impactos directos en el consumo de energía. Un análisis de correlación nos podrá ayudar a comprender hasta qué punto los cambios en los precios afectan el consumo de energía en diferentes países.
+
+2. **Diferencias Regionales**: Europa es un continente diverso con países que tienen distintas **dependencias energéticas** y **políticas de sostenibilidad**. Por ejemplo, países como España, que tiene un clima favorable para la energía solar, pueden mostrar diferentes patrones de consumo y sensibilidad a los precios en comparación con países más dependientes de energías como el carbón o la nuclear. Analizar estas diferencias puede ayudar a adaptar políticas energéticas más efectivas y personalizadas.
+
+3. **Fuentes de Energía Específicas**: Cada fuente de energía (solar, eólica, nuclear, fósil) tiene su propia dinámica de mercado y factores que afectan tanto a su precio como a su consumo. La correlación entre precio y consumo puede variar significativamente entre estas fuentes. Por ejemplo, el precio de la energía nuclear puede ser menos volátil a corto plazo debido a los altos costos fijos y la menor influencia de las fluctuaciones del mercado energético diario; mientras que con energías renovables puede pasar justo lo contrario.
+
+4. **Análisis por País**: Concentrar el análisis en países individuales permite una visión más detallada y contextualizada. España, como uno de los líderes en la adopción de energías renovables en Europa, presenta un caso de estudio interesante para analizar cómo los incentivos gubernamentales y la capacidad de generación afectan los precios y el consumo de energías renovables. Otros países grandes consumidores, como Alemania y Francia, pueden ofrecer insights sobre el consumo de energía nuclear y renovable respectivamente.
+
+5. **Decisiones Estratégicas**: Este análisis es crucial para los inversores y los planificadores del sector energético para identificar oportunidades de inversión y riesgos potenciales. Una comprensión clara de cómo los precios influyen en el consumo puede guiar las inversiones en infraestructura energética y en tecnologías emergentes.
+
+Dicho todo esto, realizar un análisis de correlación entre el precio y el consumo de energía en Europa, diferenciado por fuente de energía y por país, es **esencial para abordar los desafíos y aprovechar las oportunidades en el panorama energético europeo**. Este enfoque no solo ayuda a entender la relación entre precio y consumo, sino que también ilustra cómo diferentes factores externos y políticas nacionales pueden influir en esta dinámica. Los resultados de tal análisis informarán la **formulación de políticas**, la **planificación empresarial** y las **estrategias de sostenibilidad** a medida que Europa avanza hacia un futuro energético más verde y eficiente.
+
+
+<div style="margin-top: 30px;"></div>
+
+### Mayores productores por fuente
+
+Para realizar un análisis de regresión lineal del precio de la energía en función del **porcentaje de producción por fuente, seleccionamos países con las mayores producciones per cápita de cada tipo de energía. Esta metodología permite una comparación más precisa y representativa de los costos asociados con cada fuente de energía. Al enfocarnos en países como Chipre y Estonia para las fuentes de petróleo, podemos evaluar de manera efectiva cómo la dependencia principal de una fuente energética influye en la estructura de precios local, identificando así potencialmente las fuentes de energía más coste-eficientes.
+
+
+```{r}
+# Gas
+gas_tabla <- consum_per_capit %>%
+  pivot_wider(names_from = Type, values_from = Cons_per_cap) %>%
+  select(Entity, Gas, TOTAL) %>%
+  mutate(consumo_relativo_pctj = (.data[["Gas"]] / TOTAL) * 100) %>%
+  arrange(desc(consumo_relativo_pctj)) %>%
+  select(-Gas, -TOTAL)
+
+# Nuclear
+Nuclear_tabla <- consum_per_capit %>%
+  pivot_wider(names_from = Type, values_from = Cons_per_cap) %>%
+  select(Entity, Nuclear, TOTAL) %>%
+  mutate(consumo_relativo_pctj = (.data[["Nuclear"]] / TOTAL) * 100) %>%
+  arrange(desc(consumo_relativo_pctj))%>%
+  select(-Nuclear, -TOTAL)
+
+# Petroleo
+Petroleo_tabla <- consum_per_capit %>%
+  pivot_wider(names_from = Type, values_from = Cons_per_cap) %>%
+  select(Entity, Petroleo, TOTAL) %>%
+  mutate(consumo_relativo_pctj = (.data[["Petroleo"]] / TOTAL) * 100) %>%
+  arrange(desc(consumo_relativo_pctj))%>%
+  select(-Petroleo, -TOTAL)
+
+# Renovables
+Renovables_tabla <- consum_per_capit %>%
+  pivot_wider(names_from = Type, values_from = Cons_per_cap) %>%
+  select(Entity, Renovables, TOTAL) %>%
+  mutate(consumo_relativo_pctj = (.data[["Renovables"]] / TOTAL) * 100) %>%
+  arrange(desc(consumo_relativo_pctj))%>%
+  select(-Renovables, -TOTAL)
+
+```
+
+
+
+**Gas:**
+```{r}
+print(gas_tabla[1:3, ])
+```
+
+**Nuclear:**
+```{r}
+print(Nuclear_tabla[1:3, ])
+Nuclear_paises <- Nuclear_tabla$Entity[1:3]
+```
+
+
+**Petróleo:**
+```{r}
+print(Petroleo_tabla[1:3, ])
+
+```
+
+**Renovables:**
+```{r}
+print(Renovables_tabla[1:3, ])
+```
+
+
+
+```{r}
+levels(as.factor(consum_per_capit$Type))
+```
+
+
+
+
+## Correlación **PRECIO ~ PRODUCCIÓN**
+
+<div style="margin-top: 30px;"></div>
+
+
+Para diversificar un poco, comenzaremos realizando un corto análisis para la correlación entre producción y precio, estableciendo unos ejemplos focalizados que pueden resultar de ayuda. 
+
+Vamos a probar con los mayores consumidores en **Nuclear** y **Renovables** que vimos previamente:
+
+`PARA MAYOR COMODIDAD Y NÚMERO DE EJEMPLOS, VER` **DASHBOARD**.
+
+```{r}
+energy_fuels_long <- energy_fuels %>%
+  pivot_longer(
+    cols = starts_with("X"), 
+    names_to = "year", 
+    names_prefix = "X", 
+    values_to = "production",
+    values_drop_na = TRUE
+  ) %>%
+  mutate(year = as.numeric(year)) %>%
+  select(-3) %>%
+  rename("geo" = iso3)
+
+prices_filtered <- precios_tb %>%
+  filter(nrg_cons == "KWH2500-4999" & currency =="PPS") %>%
+  mutate(year = as.numeric(sub("-.*", "", TIME_PERIOD))) %>%
+  select(-TIME_PERIOD, -nrg_cons) %>%
+  group_by(year, geo) %>%
+  summarise(OBS_VALUE = mean(OBS_VALUE)) %>%
+  ungroup()
+
+combined_data <- merge(prices_filtered, energy_fuels_long, by =
+                         c("geo"="geo",
+                           "year"="year")) %>%
+  filter(geo != "XKX")
+
+combined_data_names <- left_join(combined_data, UN_CODES, join_by("geo" == "ISO_A3")) %>%
+  rename(Precio = OBS_VALUE)
+```
+
+
+
+```{r}
+input.energyType <- "Nuclear"
+input.currency <- "EUR"
+input.scalex <- "Ninguno"
+input.scaley <- "log"
+Nuclear_paises <- Nuclear_paises[-2]
+```
+
+```{r}
+input.country <- Nuclear_paises[1]
+preseleccion_tb <- combined_data_names %>%
+    filter(type == input.energyType | type == "TOTAL" &
+             cty.Name.English == input.country) %>%
+    pivot_wider(names_from = type, values_from = production)
+  seleccion_tb <- preseleccion_tb %>%  
+    mutate(production = (.data[[input.energyType]] / TOTAL) * 100) %>%
+    mutate(
+      production_scaled = if (input.scalex == "log") {
+        log1p(production) } else if (input.scalex == "sqrt") {
+          sqrt(production) } else { production },
+      Precio_scaled = if (input.scaley == "log") {
+        log1p(Precio) } else if (input.scaley == "sqrt") {
+          sqrt(Precio) } else { Precio }
+    )
+
+
+green_colors <- c("#A7D492", "#8BC489",
+                  "#6EBF80", "#52AA77", "#37956E", "#1B8065")
+
+p <- ggplot(seleccion_tb, aes(x = production, y = Precio, color = year)) +
+      geom_point() +
+      geom_smooth(method = "lm", se = FALSE, color="blue") +
+      labs(x = paste0(input.energyType, "(en % sobre el total)"), y = "Precio") +
+      scale_color_gradientn(colors = green_colors) +
+      theme_minimal() +
+  ylim(c(0, 0.3))
+
+
+# --------------------------------------------
+
+input.country <- Nuclear_paises[2]
+
+preseleccion_tb <- combined_data_names %>%
+    filter(type == input.energyType | type == "TOTAL" &
+             cty.Name.English == input.country) %>%
+    pivot_wider(names_from = type, values_from = production)
+  seleccion_tb <- preseleccion_tb %>%  
+    mutate(production = (.data[[input.energyType]] / TOTAL) * 100) %>%
+    mutate(
+      production_scaled = if (input.scalex == "log") {
+        log1p(production) } else if (input.scalex == "sqrt") {
+          sqrt(production) } else { production },
+      Precio_scaled = if (input.scaley == "log") {
+        log1p(Precio) } else if (input.scaley == "sqrt") {
+          sqrt(Precio) } else { Precio }
+    )
+
+
+green_colors <- c("#A7D492", "#8BC489",
+                  "#6EBF80", "#52AA77", "#37956E", "#1B8065")
+
+p1 <- ggplot(seleccion_tb, aes(x = production, y = Precio, color = year)) +
+      geom_point() +
+      geom_smooth(method = "lm", se = FALSE, color="blue") +
+      labs(x = paste0(input.energyType, "(en % sobre el total)"), y = "Precio") +
+      scale_color_gradientn(colors = green_colors) +
+      theme_minimal() +
+    ylim(c(0, 0.25))
+
+
+subplot(p, p1, nrows = 1, margin = 0.05) %>%
+  layout(title = "Correlación entre Producción Relativa de Nuclear y Precio",
+         xaxis = list(title = "Producción - FRANCIA"),
+         xaxis2 = list(title = "Producción - SUECIA"),
+         yaxis = list(title = "Precio")
+         )
+
+
+```
+
+Como ejemplo, pusimos la tendencia de los mayores productores per cápita para escoger de la manera más fiel posible los países que mejor se ajustaran a una regresión que nos pudiera informar de algo útil.
+
+La gráfica presentada, concretamente, ilustra la relación entre la producción de energía nuclear como porcentaje del total y los precios de la energía en Francia y Suecia, dos de los países europeos con mayor dependencia de la energía nuclear. Observamos una tendencia descendente en ambas gráficas, con una **pendiente negativa** que sugiere una correlación entre un mayor porcentaje de producción nuclear y precios más bajos de energía.
+
+
+### Conclusiones de la Gráfica
+
+1. **Correlación Observada**:
+   - Existe una correlación notable entre la producción de energía nuclear y los precios de la energía en Francia y Suecia. **A medida que aumenta el porcentaje de producción nuclear respecto al total**, los **precios tienden a disminuir**. Esto sugiere que, en condiciones similares, la energía nuclear puede ser una fuente más **costo-eficiente** en comparación con otras fuentes de energía (para estos casos específicos).
+
+2. **Implicaciones de la Pendiente Negativa**:
+   - La pendiente negativa de la línea de regresión en ambas gráficas indica que a mayor producción relativa de energía nuclear, generalmente los precios de la energía son menores. Esto puede reflejar las economías de escala y la eficiencia inherente a las operaciones de plantas nucleares, que, una vez construidas y operativas, tienen costos variables relativamente bajos en comparación con otras fuentes de energía.
+
+3. **Cautela sobre Causalidad**:
+   - Aunque las tendencias indican una relación entre la producción de energía nuclear y los precios bajos, **es crucial recordar que la correlación no implica causalidad**. Otros factores no capturados en el análisis podrían influir en los precios de la energía, incluyendo **políticas gubernamentales, subsidios, precios de combustibles fósiles y costos de infraestructura.**
+
+#### Implicaciones Prácticas
+
+La evidencia sugiere que para países con una capacidad significativa de producción nuclear, como Francia y Suecia, esta fuente de energía puede contribuir a estabilizar o reducir los costos de energía para los consumidores y la industria. Esta situación podría motivar a otros países a considerar la energía nuclear como una parte integral de su mix energético, especialmente aquellos que enfrentan desafíos similares en términos de seguridad energética y reducción de emisiones de carbono. **Aunque debemos tomar otros países como ejemplo y, de nuevo, aislar para las ventajas de cada país.**
+
+Estos hallazgos pueden ser especialmente relevantes en debates políticos y económicos sobre el futuro del sector energético en Europa, destacando el papel potencial de la energía nuclear en la transición hacia sistemas energéticos más sostenibles y económicamente viables.
+
+
+
+<div style="margin-top: 30px;"></div>
+
+
+## Relación **Precio ~ Consumo** en España
+
+<div style="margin-top: 30px;"></div>
+
+
+Ahora sí, comenzaremos igual que en el caso anterior, pero haciendo uso de los datos de **consumo** por parte de **OWID**. 
+
+Primero vemos las tendencias a lo largo de los años mediante este **gráfico de doble eje vertical**:
+
+```{r}
+
+
+prices_esp <- prices_filtered %>%
+  filter(geo == "ESP") %>%
+  rename(Year = year, Precio = OBS_VALUE)
+
+esp_consum <- energy_cons_long %>%
+  filter(Code == "ESP" & Year >= 2007 & Type == "TOTAL")
+
+combined_data <- left_join(esp_consum, prices_esp, by = c("Year", "Code" = "geo"))
+
+
+hchart(combined_data, "line", hcaes(x = Year, y = Consumption),
+       name = "Consumo de Energía") %>%
+  hc_add_series(data = combined_data, type = "line", hcaes(x = Year, y = Precio),
+                name = "Precio de Energía", yAxis = 1) %>%
+  hc_yAxis_multiples(
+    list(title = list(text = "Consumo de Energía (Unidades)")),
+    list(title = list(text = "Precio de Energía (€)"), opposite = TRUE)
+  ) %>%
+  hc_title(text = "Evolución del Consumo y Precio de Energía en España") %>%
+  hc_legend(enabled = true)
+```
+
+
+
+Y, como en el caso anterior, podemos realizar la **gráfica de regresión**.
+**VER DASHBOARD: "Consumo ~ Precio"**.
+
+Con la gráfica anterior, observamos que mientras el consumo de energía ha mostrado un crecimiento constante, los precios han experimentado una volatilidad considerable, culminando en un aumento significativo en los últimos años.
+
+1. **Consumo de Energía**:
+   - El consumo energético en España ha aumentado de forma sostenida desde 2010, lo que refleja una expansión en la actividad económica y, posiblemente, una mayor demanda residencial y comercial de energía. La tendencia ascendente indica que las necesidades energéticas del país continúan creciendo a medida que se expande su infraestructura y población.
+
+2. **Precio de la Energía**:
+   - Los precios de la energía han seguido una trayectoria más errática. Aunque hubo periodos de relativa estabilidad, desde 2020 los precios han experimentado un incremento notable, lo que podría estar relacionado con factores globales como la fluctuación de precios en los mercados internacionales de energía, políticas energéticas locales, y otros choques económicos recientes.
+
+
+
+<div style="margin-top: 30px;"></div>
+
+
+
+## Matrices de Correlación con los datasets
+
+
+<div style="margin-top: 30px;"></div>
+
+### Análisis de la Matriz por Fuente
+
+
+```{r}
+energy_cons_long %>%
+  filter(Type != "TOTAL" & Year == max(Year)) %>%
+  select(-emoji) %>%
+  pivot_wider(names_from = Type, values_from = Consumption) %>%
+  select(-(1:3)) %>%
+  cor(use='complete.obs') %>% # cálculo matriz correlación eliminando NA previamente
+  hchart() %>% # dibujo interactivo matriz de correlación 
+  hc_title(text = "Matriz de Correlación para Europa por fuente (2022)")
+```
+
+
+1. **Correlaciones entre Tipos de Energía**:
+   - Las fuentes de energía renovable (solar, eólica, hidroeléctrica y otras renovables) muestran grados variables de **correlación positiva entre sí**, lo que sugiere que los países que invierten en un tipo de energía renovable tienden a invertir también en otros tipos. Esto podría reflejar una política energética integrada que **favorece las renovables en general**.
+   - La energía nuclear muestra correlaciones más bajas con las fuentes de energía renovables, lo que podría indicar políticas energéticas que **separan el desarrollo nuclear del desarrollo de las renovables**. Esto puede deberse a diferencias en la infraestructura, regulación, y estrategias a largo plazo.
+
+
+
+
+### Análisis de la Matriz Sectorial
+
+
+```{r}
+energy_consumption_sectores %>%
+  filter(Year == max(Year)) %>%
+  select(Petroleo:Nuclear) %>%
+  cor(use='complete.obs') %>% # cálculo matriz correlación eliminando NA previamente
+  hchart() %>% # dibujo interactivo matriz de correlación 
+  hc_title(text = "Matriz de Correlación para Europa por Sector (2022)")
+```
+
+
+
+2. **Relaciones entre Sectores Energéticos Mayores (Sectorial)**:
+   - **Petróleo y gas muestran una alta correlación**, lo que indica que los países dependientes de uno suelen ser dependientes del otro. Esto puede reflejar una infraestructura y logística compartida o políticas energéticas que no distinguen fuertemente entre estos combustibles fósiles.
+   - Las energías renovables presentan una correlación moderada con el gas pero baja con el petróleo y la nuclear. Esto puede señalar un enfoque dual en el que algunos países están transitando del gas natural a las renovables, mientras que otros mantienen una fuerte dependencia de las fuentes tradicionales de energía.
+
+
+####  Valoraciones y Conclusión
+
+Estos patrones de correlación destacan la **complejidad de las políticas energéticas en Europa y la variedad de estrategias adoptadas por diferentes países**. El alto grado de correlación entre petróleo y gas sugiere una oportunidad y un desafío para Europa en su transición energética, ya que la infraestructura existente puede necesitar adaptaciones significativas para favorecer fuentes más sostenibles. Por otro lado, la diversificación dentro de las renovables es prometedora, ya que indica un robusto desarrollo hacia un futuro energético sostenible.
+
+
+
+
+
+# Conclusión Final
+
+
+A lo largo de este proyecto, hemos explorado exhaustivamente las dinámicas del consumo y la producción de energía en Europa, poniendo especial atención en cómo estas afectan la sostenibilidad, economía y soberanía energética de la región. La necesidad de autonomía energética es crítica; dependiendo menos de fuentes externas y más de capacidades internas, Europa puede asegurar una mayor estabilidad y control sobre su futuro energético.
+
+## Soberanía y Autonomía Energética
+
+El análisis ha demostrado la importancia crítica de ser autónomos en términos de recursos energéticos. Las naciones europeas deben esforzarse por desarrollar y utilizar fuentes de energía que no solo sean abundantes y accesibles dentro de sus propias fronteras, sino también gestionables de manera que no comprometan la seguridad ni la sostenibilidad. La energía nuclear y las renovables emergen como pilares fundamentales en este aspecto, ofreciendo alternativas viables y menos contaminantes.
+
+## Enfoque en Fuentes No Fósiles
+
+Las energías renovables y la nuclear no solo representan opciones menos contaminantes, sino también alternativas sostenibles que pueden ser escaladas para satisfacer las necesidades energéticas futuras sin depender excesivamente de importaciones. Estas fuentes deben ser el foco de futuras inversiones y desarrollos tecnológicos, favoreciendo una transición energética que respalde los objetivos climáticos y de sostenibilidad a largo plazo.
+
+## Necesidad de Cambio en el Modus Operandi de Europa
+
+Los resultados de políticas y decisiones previas han puesto de manifiesto las consecuencias de una dependencia continuada en combustibles fósiles y de políticas fragmentadas. Las **crisis energéticas recientes subrayan la urgencia de un cambio en el _modus operandi_ de Europa hacia una política energética más integrada y accesible**. Es imperativo que se adopten medidas decisivas para reformar el sector energético, asegurando que las futuras generaciones hereden un sistema más robusto y menos susceptible a las volatilidades del mercado global.
+
+
+
+
+
+Este proyecto ha ilustrado no solo los desafíos actuales a los que se enfrenta Europa en términos de política energética y sostenibilidad, sino también las oportunidades que existen para mejorar su autonomía y resiliencia energética. Al invertir en y fomentar el desarrollo de fuentes de energía nuclear y renovables, Europa puede asegurar un futuro energético que sea sostenible, menos dependiente de importaciones y más alineado con los imperativos ambientales y económicos de nuestro tiempo. Es crucial que los líderes y decisores políticos actúen con visión y determinación para facilitar esta transición, marcando el comienzo de una nueva era en la gestión energética europea.
