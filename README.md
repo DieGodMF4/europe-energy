@@ -3,7 +3,7 @@
 
 Este proyecto fue realizado en R, haciendo uso de cuadros de mando o Dashboards, los cuales se mantienen privados, pese a la utilidad que aportan.
 
-Para visualizar el proyecto, el usuario puede abrir el archivo de extensión ".RMD" en RStudio, descargar el "zip" con los datasets necesarios y posteriormente exportarlo a HTML si así lo desea.
+Para visualizar el proyecto en el formato adecuado (HTML), el usuario debe abrir el archivo de extensión ".RMD" en RStudio, descargar y extraer el "zip" con los datasets necesarios, ubicar estos archivos en el mismo directorio que el archivo RMD y posteriormente exportar este último a "HTML".
 
 
 
